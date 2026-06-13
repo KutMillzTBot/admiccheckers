@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SecureCheck Pro | Auto-Sync Back + Handwriting Fonts</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Great+Vibes&family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Mr+De+Haviland&family=Tangerine:wght@400;700&family=Dancing+Script:wght@400;600&family=Allura&family=Satisfy&family=Patrick+Hand&family=Indie+Flower&family=Shadows+Into+Light&family=Amatic+SC:wght@400;700&family=Caveat:wght@400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        @font-face {
+            font-family: 'MICR E-13B';
+            src: url('https://cdn.jsdelivr.net/npm/micr-e13b@1.0.0/micr.eot');
+            unicode-range: U+2440-244F;
+        }
+        
+        .micr-e13b {
+            font-family: 'MICR E-13B', 'Courier Prime', monospace;
+            font-size: 18px;
+            letter-spacing: 2.5px;
+            font-weight: 500;
+        }
+        
+        body { font-family: 'Inter', sans-serif; background: #e4e7eb; }
+        
+        #lockscreen { backdrop-filter: blur(14px); background: rgba(0,0,0,0.88); z-index: 1000; }
+        #pin-input { font-size: 28px; letter-spacing: 12px; text-align: center; font-family: monospace; }
+        
+        .check-canvas {
+            width: 825px;
+            height: 360px;
+            position: relative;
+            background: #fef9ef;
+            box-shadow: 0 20px 35px -12px rgba(0,0,0,0.35);
+            border-radius: 3px;
+            transform-origin: top left;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        
+        /* Bank Templates */
+        .template-default { background: linear-gradient(115deg, #fef9ef 0%, #fef5e3 100%); }
+        .template-default::before { content: "PREMIER BANK • OFFICIAL CHECK • SECURE DOCUMENT"; position: absolute; bottom: 12px; left: 20px; font-size: 6px; opacity: 0.25; pointer-events: none; z-index: 5; }
+        .template-chase { background: linear-gradient(112deg, #fbf8ef 0%, #f5efdf 100%); }
+        .template-chase::before { content: "CHASE • OFFICIAL CASHIER'S CHECK • VOID IF ALTERED"; position: absolute; bottom: 12px; left: 20px; font-size: 6px; opacity: 0.25; pointer-events: none; }
+        .template-bofa { background: repeating-linear-gradient(45deg, #fff8ec 0px, #fff8ec 1px, #fffdf2 1px, #fffdf2 10px); }
+        .template-bofa::before { content: "BANK OF AMERICA • CASHIER'S CHECK • SECURITY FEATURES"; position: absolute; bottom: 12px; left: 20px; font-size: 6px; opacity: 0.25; pointer-events: none; }
+        .template-wells { background: repeating-linear-gradient(135deg, #fef9e8 0px, #fef9e8 2px, #fffdf2 2px, #fffdf2 9px); }
+        .template-wells::before { content: "WELLS FARGO • OFFICIAL CHECK • DO NOT COPY"; position: absolute; bottom: 12px; left: 20px; font-size: 6px; opacity: 0.25; pointer-events: none; }
+        .template-citi { background: linear-gradient(125deg, #f6f3eb, #f1ecdf); }
+        .template-citi::before { content: "CITIBANK • CASHIER'S CHECK • ORIGINAL DOCUMENT"; position: absolute; bottom: 12px; left: 20px; font-size: 6px; opacity: 0.25; pointer-events: none; }
+        .template-mt { background: linear-gradient(115deg, #f2ede0 0%, #f0ead8 100%); }
+        .template-mt::before { content: "M&T BANK • OFFICIAL CHECK • SECURE DOCUMENT"; position: absolute; bottom: 12px; left: 20px; font-size: 6px; opacity: 0.25; pointer-events: none; }
+        .template-pnc { background: linear-gradient(120deg, #f5f0e6, #efe8da); }
+        .template-pnc::before { content: "PNC BANK • CASHIER'S CHECK • VOID IF COPIED"; position: absolute; bottom: 12px; left: 20px; font-size: 6px; opacity: 0.25; pointer-events: none; }
+        
+        .guilloche-bg {
+            background-image: 
+                repeating-linear-gradient(0deg, rgba(160,140,100,0.05) 0px, rgba(160,140,100,0.05) 1px, transparent 1px, transparent 14px),
+                repeating-linear-gradient(90deg, rgba(160,140,100,0.05) 0px, rgba(160,140,100,0.05) 1px, transparent 1px, transparent 14px);
+        }
+        
+        .void-pantograph { position: relative; }
+        .void-pantograph::before {
+            content: "VOID VOID VOID VOID VOID VOID VOID VOID";
+            position: absolute;
+            top: 35%;
+            left: -10%;
+            right: -10%;
+            text-align: center;
+            font-size: 28px;
+            font-weight: 900;
+            font-family: monospace;
+            letter-spacing: 8px;
+            color: rgba(200, 175, 120, 0.08);
+            transform: rotate(-18deg);
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 5;
+        }
+        
+        .microprint-top {
+            position: absolute;
+            top: 3px;
+            left: 25px;
+            right: 25px;
+            font-size: 3.8px;
+            font-family: 'Courier Prime', monospace;
+            color: rgba(100,75,45,0.4);
+            text-transform: uppercase;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 8;
+        }
+        
+        .check-inner { padding: 14px 22px; height: 100%; display: flex; flex-direction: column; justify-content: space-between; position: relative; z-index: 15; }
+        .check-border { position: absolute; top: 8px; left: 8px; right: 8px; bottom: 8px; border: 1px solid rgba(110,85,50,0.3); border-radius: 2px; pointer-events: none; }
+        
+        .security-seal {
+            position: absolute;
+            bottom: 40px;
+            right: 18px;
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(200,175,110,0.15) 0%, rgba(170,145,80,0.05) 70%);
+            border: 1px solid rgba(180,155,90,0.25);
+            pointer-events: none;
+            z-index: 6;
+        }
+        
+        /* Handwriting font classes */
+        .front-handwriting { font-family: 'Caveat', cursive; letter-spacing: 0.5px; }
+        .front-signature { font-family: 'Great Vibes', cursive; }
+        .front-clean { font-family: 'Courier Prime', monospace; font-weight: 600; }
+        .front-casual { font-family: 'Patrick Hand', cursive; }
+        .front-elegant { font-family: 'Allura', cursive; }
+        .front-playful { font-family: 'Indie Flower', cursive; }
+        .front-shadow { font-family: 'Shadows Into Light', cursive; }
+        .front-amatic { font-family: 'Amatic SC', cursive; font-weight: 700; }
+        .front-dancing { font-family: 'Dancing Script', cursive; }
+        
+        .stretched-name {
+            display: inline-block;
+            transform: scaleX(1.05);
+            letter-spacing: 1.5px;
+        }
+        
+        .cursive-sig { font-family: 'Great Vibes', 'Mr De Haviland', cursive; }
+        
+        #signature-pad { width: 100%; height: 140px; background: #fffdf5; border: 1.8px solid #ded0b8; border-radius: 0.75rem; }
+        
+        input:focus, select:focus { outline: none; border-color: #b8860b; box-shadow: 0 0 0 3px rgba(184,134,11,0.12); }
+        
+        .search-result-item, .bank-card { transition: all 0.2s ease; cursor: pointer; }
+        .search-result-item:hover { transform: translateX(3px); background: #fef3c7; }
+        
+        .template-btn.active, .font-option-btn.active { background: #b8860b; color: white; border-color: #b8860b; }
+    </style>
+</head>
+<body>
+
+    <!-- Lockscreen - PIN 1977 -->
+    <div id="lockscreen" class="fixed inset-0 z-[9999] flex items-center justify-center transition-all duration-500">
+        <div class="bg-white/96 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm p-7 text-center">
+            <div class="w-16 h-16 mx-auto bg-amber-100 rounded-2xl flex items-center justify-center mb-4">
+                <svg class="w-8 h-8 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            </div>
+            <h2 class="text-2xl font-bold text-slate-800">SecureCheck Pro</h2>
+            <p class="text-slate-500 mt-2 mb-6 text-sm">Enter 4-digit PIN</p>
+            <input type="password" id="pin-input" class="w-full px-4 py-4 border-2 border-slate-200 rounded-xl text-center text-3xl tracking-[0.8em] focus:border-amber-600 transition-all font-mono" maxlength="4" placeholder="●●●●" autofocus>
+            <button id="unlock-btn" class="w-full mt-6 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 rounded-xl">Unlock Vault</button>
+            <p id="pin-error" class="text-red-500 text-sm mt-3 hidden">❌ Access Denied</p>
+        </div>
+    </div>
+
+    <div id="app" class="flex-1 hidden overflow-y-auto bg-gradient-to-br from-slate-100 to-stone-100">
+        <nav class="bg-white/80 backdrop-blur-md border-b px-6 py-3 flex justify-between items-center sticky top-0 z-40">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-amber-700 rounded-xl flex items-center justify-center text-white font-bold">$</div>
+                <h1 class="text-xl font-extrabold text-slate-800">Secure<span class="text-amber-700">Check</span> Pro</h1>
+                <span class="ml-2 text-[10px] font-mono bg-emerald-100 px-2 py-0.5 rounded-full">✍️ AUTO-SYNC BACK</span>
+            </div>
+            <button id="btn-lock" class="text-sm font-semibold text-slate-600 px-4 py-2 rounded-full bg-slate-100">🔒 Lock</button>
+        </nav>
+
+        <div class="max-w-7xl mx-auto p-5 md:p-7 grid grid-cols-1 xl:grid-cols-12 gap-8">
+            <!-- Left Panel -->
+            <div class="xl:col-span-5 space-y-6">
+                <!-- BANK SEARCH - Auto fills to front AND back -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <h3 class="text-xs font-black text-amber-800 uppercase mb-3 flex items-center gap-2"><span class="w-2 h-2 bg-amber-600 rounded-full"></span> 🔍 Search Bank</h3>
+                    <input type="text" id="bank-search-input" class="w-full px-4 py-3 pl-10 border-2 border-slate-200 rounded-xl text-sm focus:border-amber-400" placeholder="Type: Chase, BofA, Wells, Citi, M&T, PNC...">
+                    <div id="bank-search-results" class="mt-3 space-y-2 max-h-48 overflow-y-auto">
+                        <div class="text-xs text-slate-400 text-center py-2">💡 Select a bank → auto-fills front AND back endorsement</div>
+                    </div>
+                </div>
+
+                <!-- Front Handwriting Font Selector -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <h3 class="text-xs font-black text-amber-800 uppercase mb-3">✍️ Front Writing Style</h3>
+                    <div class="grid grid-cols-3 gap-2 mb-3">
+                        <button data-front-font="handwriting" class="font-option-btn active px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Caveat', cursive;">Caveat</button>
+                        <button data-front-font="signature" class="font-option-btn px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Great Vibes', cursive;">Great Vibes</button>
+                        <button data-front-font="clean" class="font-option-btn px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Courier Prime', monospace;">Clean</button>
+                        <button data-front-font="casual" class="font-option-btn px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Patrick Hand', cursive;">Patrick</button>
+                        <button data-front-font="elegant" class="font-option-btn px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Allura', cursive;">Allura</button>
+                        <button data-front-font="playful" class="font-option-btn px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Indie Flower', cursive;">Indie</button>
+                        <button data-front-font="shadow" class="font-option-btn px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Shadows Into Light', cursive;">Shadows</button>
+                        <button data-front-font="amatic" class="font-option-btn px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Amatic SC', cursive;">Amatic</button>
+                        <button data-front-font="dancing" class="font-option-btn px-2 py-2 text-xs rounded-lg border border-amber-300 bg-amber-50" style="font-family: 'Dancing Script', cursive;">Dancing</button>
+                    </div>
+                    <div class="p-2 bg-amber-50/50 rounded-lg text-center">
+                        <span class="text-[10px] text-slate-500">Preview: </span>
+                        <span id="font-preview-text" class="text-sm" style="font-family: 'Caveat', cursive;">Catherine Young</span>
+                    </div>
+                </div>
+
+                <!-- Quick Bank Templates -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <h3 class="text-xs font-black text-amber-800 uppercase mb-3">🏦 Bank Templates</h3>
+                    <div class="grid grid-cols-4 gap-2">
+                        <button data-template="default" class="template-btn active px-2 py-2 text-[11px] rounded-lg border border-amber-300 bg-amber-50 font-bold">Premier</button>
+                        <button data-template="chase" class="template-btn px-2 py-2 text-[11px] rounded-lg border border-amber-300 bg-amber-50">Chase</button>
+                        <button data-template="bofa" class="template-btn px-2 py-2 text-[11px] rounded-lg border border-amber-300 bg-amber-50">BofA</button>
+                        <button data-template="wells" class="template-btn px-2 py-2 text-[11px] rounded-lg border border-amber-300 bg-amber-50">Wells</button>
+                        <button data-template="citi" class="template-btn px-2 py-2 text-[11px] rounded-lg border border-amber-300 bg-amber-50">Citi</button>
+                        <button data-template="mt" class="template-btn px-2 py-2 text-[11px] rounded-lg border border-amber-300 bg-amber-50">M&T</button>
+                        <button data-template="pnc" class="template-btn px-2 py-2 text-[11px] rounded-lg border border-amber-300 bg-amber-50">PNC</button>
+                    </div>
+                </div>
+
+                <!-- Payer Form -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xs font-black text-amber-800 uppercase">Remitter Info</h3>
+                        <button id="btn-fill-demo" class="text-xs text-amber-700 font-bold bg-amber-50 px-3 py-1 rounded-full">⚡ Demo</button>
+                    </div>
+                    <div class="space-y-3">
+                        <input type="text" id="input-name" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="Full Name" value="CATHERINE YOUNG">
+                        <input type="text" id="input-address" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="Street Address" value="19990 E 14 MILE RD APT D5">
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="text" id="input-city" class="px-3 py-2.5 border rounded-lg text-sm" placeholder="City" value="FRASER">
+                            <input type="text" id="input-state" class="px-3 py-2.5 border rounded-lg text-sm" placeholder="State" value="MI">
+                        </div>
+                        <input type="text" id="input-zip" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="ZIP" value="48026">
+                    </div>
+                    
+                    <hr class="my-5">
+                    <h3 class="text-xs font-black text-amber-800 uppercase mb-3">Payment Details</h3>
+                    <div class="space-y-3">
+                        <input type="text" id="input-payee" class="w-full px-3 py-2.5 border rounded-lg text-base font-medium" placeholder="Pay To The Order Of" value="JOHN SMITH">
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="number" id="input-amount" class="px-3 py-2.5 border rounded-lg font-bold text-emerald-700 text-lg" placeholder="Amount" value="4750">
+                            <input type="date" id="input-date" class="px-3 py-2.5 border rounded-lg text-sm" value="2024-06-12">
+                        </div>
+                        <input type="text" id="input-memo" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="Memo" value="Consulting Services">
+                    </div>
+                    
+                    <hr class="my-5">
+                    <h3 class="text-xs font-black text-amber-800 uppercase mb-3">Routing & Account</h3>
+                    <div class="grid grid-cols-3 gap-2">
+                        <input type="text" id="input-routing" class="px-2 py-2.5 border rounded-lg text-sm font-mono" placeholder="Routing" value="122000661">
+                        <input type="text" id="input-account" class="px-2 py-2.5 border rounded-lg text-sm font-mono" placeholder="Account" value="1234567890">
+                        <input type="text" id="input-checknum" class="px-2 py-2.5 border rounded-lg text-sm font-mono" placeholder="Check #" value="1001">
+                    </div>
+                </div>
+
+                <!-- Signature -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-xs font-black text-amber-800 uppercase">✍️ Signature</h3>
+                        <button id="btn-clear-sig" class="text-xs text-red-600">Clear</button>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-[10px] font-bold text-slate-500">Type Name (Cursive)</label>
+                        <div class="flex gap-2 mt-1">
+                            <input type="text" id="typed-signature-input" class="flex-1 px-3 py-2 border rounded-lg text-sm" value="Catherine Young">
+                            <button id="apply-signature" class="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-bold">Apply</button>
+                        </div>
+                    </div>
+                    <canvas id="signature-pad" class="w-full rounded-xl border-2 border-amber-100 h-32"></canvas>
+                    <div id="signature-preview" class="mt-2 text-right cursive-sig text-xl text-slate-700" style="font-family: 'Great Vibes', cursive;">Catherine Young</div>
+                </div>
+            </div>
+
+            <!-- Right Panel -->
+            <div class="xl:col-span-7 space-y-6">
+                <div class="bg-white rounded-2xl shadow-lg p-3 flex justify-between items-center">
+                    <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                        <button id="tab-front" class="px-5 py-2 text-sm font-bold rounded-lg bg-white shadow-sm">💵 Front</button>
+                        <button id="tab-back" class="px-5 py-2 text-sm font-bold rounded-lg text-slate-600">🔄 Back</button>
+                    </div>
+                    <button id="btn-download-pdf" class="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold shadow-md">📱 PDF</button>
+                </div>
+
+                <div class="bg-slate-100/70 rounded-2xl p-5 flex flex-col items-center relative">
+                    <div id="pdf-loading" class="absolute inset-0 bg-white/95 backdrop-blur-sm z-50 hidden flex-col items-center justify-center rounded-2xl">
+                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600 mb-3"></div>
+                        <p class="text-sm font-semibold">Generating PDF...</p>
+                    </div>
+                    
+                    <div class="overflow-x-auto pb-2 w-full flex justify-center">
+                        <!-- FRONT CHECK -->
+                        <div id="check-front" class="check-canvas template-default guilloche-bg void-pantograph relative">
+                            <div class="microprint-top">••• OFFICIAL CASHIER'S CHECK ••• SECURITY FEATURES PRESENT ••• DO NOT COPY •••</div>
+                            <div class="check-border"></div>
+                            <div class="security-seal"></div>
+                            <div class="check-inner">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <div class="text-[9px] font-bold text-slate-500 uppercase">Remitter</div>
+                                        <div id="out-name" class="font-extrabold text-base tracking-wide stretched-name" style="letter-spacing: 2px;">CATHERINE YOUNG</div>
+                                        <div id="out-address" class="text-[10px]">19990 E 14 MILE RD APT D5</div>
+                                        <div><span id="out-city">FRASER</span>, <span id="out-state">MI</span> <span id="out-zip">48026</span></div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-[9px] font-bold text-slate-500 uppercase">Cashier's Check</div>
+                                        <div class="font-mono text-xl font-black"><span id="out-checknum-top" class="border-b-2 border-amber-800/40 px-2">1001</span></div>
+                                        <div class="mt-2 flex items-center gap-2 text-xs justify-end">
+                                            <span class="font-black">Date</span>
+                                            <span id="out-date" class="border-b border-gray-400 min-w-[100px] text-center font-mono">06/12/2024</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-3">
+                                    <div class="text-[9px] font-black uppercase text-slate-500">Pay to the order of</div>
+                                    <div class="flex items-end border-b-2 border-gray-700 mt-0.5">
+                                        <span id="out-payee" class="text-xl font-extrabold pb-1 w-full payee-font-preview" style="font-family: 'Caveat', cursive;">JOHN SMITH</span>
+                                        <div class="ml-3 bg-amber-50 rounded-md px-3 py-1 border">
+                                            <span class="text-xl font-black">$</span>
+                                            <span id="out-amount" class="text-2xl font-black font-mono">4,750.00</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-2">
+                                    <div class="flex-1 border-b border-gray-600 bg-white/20">
+                                        <span id="out-amount-text" class="text-[11px] font-bold pl-1 pb-0.5 uppercase tracking-wide payee-font-preview" style="font-family: 'Caveat', cursive;">FOUR THOUSAND SEVEN HUNDRED FIFTY DOLLARS AND 00/100</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-2 flex justify-between text-[10px] font-extrabold text-slate-600">
+                                    <span id="out-bank-name" class="tracking-wide">PREMIER BANK</span>
+                                    <span>MEMBER FDIC</span>
+                                </div>
+                                
+                                <div class="flex items-end justify-between mt-auto mb-4">
+                                    <div class="w-1/2 flex items-end border-b border-gray-500">
+                                        <span class="text-[8px] font-black uppercase mr-2">Memo</span>
+                                        <span id="out-memo" class="pb-1 text-xs font-mono payee-font-preview" style="font-family: 'Caveat', cursive;">Consulting Services</span>
+                                    </div>
+                                    <div class="w-1/3 border-b border-gray-500 relative h-8 flex justify-end">
+                                        <div id="signature-on-check" class="absolute bottom-0 right-0 text-xl cursive-sig text-slate-700" style="font-family: 'Great Vibes', cursive; font-size: 18px;">Catherine Young</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5 text-gray-700 text-sm bg-white/30 py-1 font-mono tracking-wider micr-e13b">
+                                    <span>⑆</span><span id="out-routing-micr">122000661</span><span>⑆</span>
+                                    <span>⑆</span><span id="out-account-micr">1234567890</span><span>⑆</span>
+                                    <span>⑆</span><span id="out-checknum-micr">1001</span><span>⑆</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BACK CHECK - AUTO SYNC FROM FRONT (Bank name appears after "Pay to the order of") -->
+                        <div id="check-back" class="check-canvas template-default hidden relative">
+                            <div class="check-border border-dashed border-amber-800/30"></div>
+                            <div class="absolute inset-0 flex items-center justify-center opacity-8 text-7xl font-black rotate-12 text-amber-900/10 pointer-events-none">VOID IF ALTERED</div>
+                            <div class="h-full w-full flex flex-col">
+                                <div class="bg-amber-50/60 border-b border-amber-800/20 px-4 py-1.5">
+                                    <div class="text-[7px] font-black uppercase tracking-wider text-center text-slate-500">FOR MOBILE DEPOSIT - ENDORSE HERE</div>
+                                </div>
+                                <div class="flex flex-1">
+                                    <div class="w-[55%] border-r border-dashed border-amber-800/30 p-3 flex flex-col">
+                                        <div class="text-[9px] font-black text-slate-600 uppercase mb-1">✦ Endorsement Area ✦</div>
+                                        <textarea id="input-endorsement" class="w-full h-20 bg-transparent resize-none border-b border-dashed border-amber-800/30 focus:outline-none text-sm font-mono" placeholder="For deposit only">FOR MOBILE DEPOSIT ONLY</textarea>
+                                        
+                                        <!-- AUTO-SYNC BOX - Bank name appears here after search -->
+                                        <div class="mt-2 p-2 bg-amber-50/70 rounded text-[9px] font-mono space-y-1 border border-amber-200">
+                                            <div class="flex justify-between"><span class="font-bold">Pay to the order of:</span><span id="back-bank-name" class="font-bold text-amber-800">PREMIER BANK</span></div>
+                                            <div class="flex justify-between"><span class="font-bold">Remitter:</span><span id="back-remitter">CATHERINE YOUNG</span></div>
+                                            <div class="flex justify-between"><span class="font-bold">Payee:</span><span id="back-payee">JOHN SMITH</span></div>
+                                            <div class="flex justify-between"><span class="font-bold">Amount:</span><span id="back-amount">$4,750.00</span></div>
+                                            <div class="flex justify-between"><span class="font-bold">Check #:</span><span id="back-checknum">1001</span></div>
+                                            <div class="flex justify-between"><span class="font-bold">Routing:</span><span id="back-routing">122000661</span></div>
+                                            <div class="flex justify-between"><span class="font-bold">Account:</span><span id="back-account">1234567890</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 p-3 flex flex-col justify-between">
+                                        <div class="text-right">
+                                            <div class="text-[7px] font-mono text-slate-400">SN# 817403736180</div>
+                                        </div>
+                                        <div class="text-center">
+                                            <div class="text-[7px] uppercase tracking-wider text-slate-500 font-bold">CHECK HERE FOR MOBILE DEPOSIT</div>
+                                            <div class="mt-2 text-[8px] font-mono"><span class="font-bold">DATE:</span> <span id="back-wage-date">06/12/2024</span></div>
+                                        </div>
+                                        <div class="mt-2 text-[6px] text-center text-slate-400">ORIGINAL DOCUMENT • SECURITY SCREEN</div>
+                                    </div>
+                                </div>
+                                <div class="border-t border-amber-800/20 px-3 py-1 text-[7px] font-mono text-slate-400 text-center tracking-wider">
+                                    +1:0 2 20000461: 560 196 792 102 84
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3 flex items-center gap-2 bg-white/80 px-3 py-1.5 rounded-full">
+                        <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                        <span class="text-[10px] font-semibold text-emerald-700">✓ Bank name auto-syncs to back "Pay to the order of" • 9 Handwriting Fonts</span>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-lg p-4">
+                    <h3 class="text-xs font-black text-amber-800 uppercase mb-2">📁 Saved Checks</h3>
+                    <div id="recent-list" class="max-h-36 overflow-y-auto space-y-1">
+                        <div class="text-sm text-slate-400 text-center py-3 italic" id="empty-recent">No saved checks</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        document.addEventListener('DOMContentLoaded', () => {
+            let recentChecks = [];
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'secure-check-app';
+            let db, auth, currentUser = null;
+            
+            if (firebaseConfig) {
+                const fbApp = initializeApp(firebaseConfig);
+                auth = getAuth(fbApp); db = getFirestore(fbApp);
+                signInAnonymously(auth).catch(console.warn);
+                onAuthStateChanged(auth, (user) => {
+                    currentUser = user;
+                    if (user && db) {
+                        const checksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'checks');
+                        onSnapshot(checksRef, (snap) => {
+                            let fc = []; snap.forEach(d => fc.push({ id: d.id, ...d.data() }));
+                            fc.sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
+                            recentChecks = fc; renderRecentList();
+                        });
+                    }
+                });
+            }
+
+            // Lockscreen
+            const lockscreen = document.getElementById('lockscreen'), appDiv = document.getElementById('app');
+            const pinInput = document.getElementById('pin-input'), unlockBtn = document.getElementById('unlock-btn');
+            const pinError = document.getElementById('pin-error'), btnLock = document.getElementById('btn-lock');
+            
+            const unlockApp = () => { 
+                if(pinInput.value === '1977') { 
+                    lockscreen.style.opacity = '0'; 
+                    setTimeout(() => { lockscreen.classList.add('hidden'); appDiv.classList.remove('hidden'); resizeCanvas(); }, 400); 
+                } else { 
+                    pinError.classList.remove('hidden'); 
+                    pinInput.value = '';
+                    setTimeout(() => pinError.classList.add('hidden'), 1500); 
+                } 
+            };
+            unlockBtn.onclick = unlockApp;
+            pinInput.addEventListener('keypress', (e) => e.key === 'Enter' && unlockApp());
+            btnLock.onclick = () => { pinInput.value = ''; appDiv.classList.add('hidden'); lockscreen.classList.remove('hidden'); lockscreen.style.opacity = '1'; };
+            
+            // Signature
+            const canvas = document.getElementById('signature-pad');
+            const signaturePad = new SignaturePad(canvas, { minWidth: 1.5, maxWidth: 2.5, penColor: "#1e293b" });
+            function resizeCanvas() { const ratio = window.devicePixelRatio || 1; canvas.width = canvas.offsetWidth * ratio; canvas.height = canvas.offsetHeight * ratio; canvas.getContext("2d").scale(ratio, ratio); signaturePad.clear(); }
+            window.addEventListener("resize", resizeCanvas);
+            document.getElementById('btn-clear-sig').addEventListener('click', () => { signaturePad.clear(); updateSignatureDisplay(); updatePreview(); });
+            
+            const typedInput = document.getElementById('typed-signature-input');
+            const applySigBtn = document.getElementById('apply-signature');
+            const signaturePreview = document.getElementById('signature-preview');
+            const signatureOnCheck = document.getElementById('signature-on-check');
+            let currentSignature = "Catherine Young";
+            
+            function updateSignatureDisplay() {
+                if (!signaturePad.isEmpty()) {
+                    const sigData = signaturePad.toDataURL();
+                    signatureOnCheck.innerHTML = `<img src="${sigData}" style="max-height: 35px; max-width: 120px;">`;
+                    signaturePreview.innerHTML = `<span class="text-[10px] text-emerald-600">✓ Drawn</span>`;
+                } else {
+                    signatureOnCheck.innerHTML = `<span style="font-family: 'Great Vibes', cursive; font-size: 18px;">${currentSignature}</span>`;
+                    signaturePreview.innerHTML = `<span style="font-family: 'Great Vibes', cursive; font-size: 22px;">${currentSignature}</span>`;
+                }
+            }
+            
+            applySigBtn.addEventListener('click', () => {
+                let val = typedInput.value.trim();
+                if (val) currentSignature = val;
+                signaturePad.clear();
+                updateSignatureDisplay();
+                updatePreview();
+            });
+            
+            // Front Handwriting Font
+            let currentFrontFont = "handwriting";
+            const fontMap = {
+                'handwriting': 'Caveat, cursive', 'signature': 'Great Vibes, cursive', 'clean': 'Courier Prime, monospace',
+                'casual': 'Patrick Hand, cursive', 'elegant': 'Allura, cursive', 'playful': 'Indie Flower, cursive',
+                'shadow': 'Shadows Into Light, cursive', 'amatic': 'Amatic SC, cursive', 'dancing': 'Dancing Script, cursive'
+            };
+            
+            document.querySelectorAll('.font-option-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.font-option-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentFrontFont = btn.getAttribute('data-front-font');
+                    const fontFamily = fontMap[currentFrontFont];
+                    document.getElementById('out-payee').style.fontFamily = fontFamily;
+                    document.getElementById('out-amount-text').style.fontFamily = fontFamily;
+                    document.getElementById('out-memo').style.fontFamily = fontFamily;
+                    document.getElementById('font-preview-text').style.fontFamily = fontFamily;
+                    updatePreview();
+                });
+            });
+            
+            // Bank Templates & Search
+            const bankDatabase = [
+                { name: "Chase Bank", terms: ["chase", "jpmorgan"], template: "chase", routing: "021000021", bankDisplay: "Chase Bank" },
+                { name: "Bank of America", terms: ["bofa", "bank of america"], template: "bofa", routing: "026009593", bankDisplay: "Bank of America" },
+                { name: "Wells Fargo", terms: ["wells", "wells fargo"], template: "wells", routing: "121000248", bankDisplay: "Wells Fargo Bank" },
+                { name: "Citibank", terms: ["citi", "citibank"], template: "citi", routing: "321171184", bankDisplay: "Citibank N.A." },
+                { name: "M&T Bank", terms: ["mt", "m&t"], template: "mt", routing: "022000046", bankDisplay: "M&T Bank" },
+                { name: "PNC Bank", terms: ["pnc"], template: "pnc", routing: "043000096", bankDisplay: "PNC Bank" },
+                { name: "Premier Bank", terms: ["premier", "default"], template: "default", routing: "122000661", bankDisplay: "Premier Bank" }
+            ];
+            
+            const templates = {
+                'default': { class: 'template-default', name: 'Premier Bank' },
+                'chase': { class: 'template-chase', name: 'Chase Bank' },
+                'bofa': { class: 'template-bofa', name: 'Bank of America' },
+                'wells': { class: 'template-wells', name: 'Wells Fargo Bank' },
+                'citi': { class: 'template-citi', name: 'Citibank N.A.' },
+                'mt': { class: 'template-mt', name: 'M&T Bank' },
+                'pnc': { class: 'template-pnc', name: 'PNC Bank' }
+            };
+            
+            let currentTemplate = 'default';
+            
+            function applyTemplate(templateId, bankDisplayName = null) {
+                currentTemplate = templateId;
+                const front = document.getElementById('check-front');
+                const back = document.getElementById('check-back');
+                front.className = `check-canvas ${templates[templateId].class} guilloche-bg void-pantograph relative`;
+                back.className = `check-canvas ${templates[templateId].class} hidden relative`;
+                const displayName = bankDisplayName || templates[templateId].name;
+                document.getElementById('out-bank-name').innerText = displayName;
+                // AUTO-SYNC: Update back endorsement with bank name
+                document.getElementById('back-bank-name').innerText = displayName;
+                updatePreview();
+            }
+            
+            document.querySelectorAll('.template-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.template-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    applyTemplate(btn.getAttribute('data-template'));
+                });
+            });
+            
+            // Bank Search - Auto fills to front AND back
+            const searchInput = document.getElementById('bank-search-input');
+            const resultsDiv = document.getElementById('bank-search-results');
+            
+            function performBankSearch() {
+                const query = searchInput.value.toLowerCase().trim();
+                if (!query) { 
+                    resultsDiv.innerHTML = '<div class="text-xs text-slate-400 text-center py-2">💡 Type bank name to load template + routing (auto-syncs to back)</div>';
+                    return;
+                }
+                const matches = bankDatabase.filter(b => b.terms.some(term => term.includes(query) || query.includes(term)));
+                if (matches.length === 0) {
+                    resultsDiv.innerHTML = '<div class="text-xs text-red-400 text-center py-2">❌ No bank found</div>';
+                    return;
+                }
+                resultsDiv.innerHTML = matches.map((b, idx) => `
+                    <div class="search-result-item p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between" data-bank-idx="${idx}">
+                        <div><div class="font-bold text-sm">${b.name}</div><div class="text-[9px] text-slate-500 font-mono">Routing: ${b.routing}</div></div>
+                        <span class="text-amber-600 text-xs font-bold">↺ Load</span>
+                    </div>
+                `).join('');
+                
+                document.querySelectorAll('[data-bank-idx]').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const bank = bankDatabase[parseInt(el.getAttribute('data-bank-idx'))];
+                        applyTemplate(bank.template, bank.bankDisplay);
+                        document.getElementById('input-routing').value = bank.routing;
+                        // Also update the back bank name
+                        document.getElementById('back-bank-name').innerText = bank.bankDisplay;
+                        updatePreview();
+                        searchInput.value = '';
+                        resultsDiv.innerHTML = '<div class="text-xs text-green-600 text-center py-2">✓ Bank loaded! Back endorsement updated.</div>';
+                        setTimeout(() => {
+                            if (searchInput.value === '') resultsDiv.innerHTML = '<div class="text-xs text-slate-400 text-center py-2">💡 Type bank name</div>';
+                        }, 2000);
+                    });
+                });
+            }
+            searchInput.addEventListener('input', performBankSearch);
+            
+            const numToWords = (n) => {
+                if (isNaN(n) || n === 0) return "ZERO DOLLARS";
+                const units = ["","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE","TEN","ELEVEN","TWELVE","THIRTEEN","FOURTEEN","FIFTEEN","SIXTEEN","SEVENTEEN","EIGHTEEN","NINETEEN"];
+                const tens = ["","","TWENTY","THIRTY","FORTY","FIFTY","SIXTY","SEVENTY","EIGHTY","NINETY"];
+                const convert = (x) => {
+                    if (x === 0) return "";
+                    if (x < 20) return units[x] + " ";
+                    if (x < 100) return tens[Math.floor(x/10)] + " " + (x%10 !== 0 ? units[x%10] + " " : "");
+                    return units[Math.floor(x/100)] + " HUNDRED " + convert(x % 100);
+                };
+                let dollars = Math.floor(n), cents = Math.round((n - dollars) * 100);
+                let dollarsStr = convert(dollars).trim();
+                if (dollarsStr === "") dollarsStr = "ZERO";
+                return `${dollarsStr} DOLLARS AND ${cents.toString().padStart(2,'0')}/100`;
+            };
+            
+            const inputs = {
+                name: document.getElementById('input-name'), address: document.getElementById('input-address'),
+                city: document.getElementById('input-city'), state: document.getElementById('input-state'), zip: document.getElementById('input-zip'),
+                payee: document.getElementById('input-payee'), amount: document.getElementById('input-amount'),
+                date: document.getElementById('input-date'), memo: document.getElementById('input-memo'),
+                routing: document.getElementById('input-routing'), account: document.getElementById('input-account'),
+                checknum: document.getElementById('input-checknum'), endorsement: document.getElementById('input-endorsement')
+            };
+            
+            const outputs = {
+                name: document.getElementById('out-name'), address: document.getElementById('out-address'),
+                city: document.getElementById('out-city'), state: document.getElementById('out-state'), zip: document.getElementById('out-zip'),
+                payee: document.getElementById('out-payee'), amount: document.getElementById('out-amount'),
+                amountText: document.getElementById('out-amount-text'), date: document.getElementById('out-date'),
+                memo: document.getElementById('out-memo'), routingMicr: document.getElementById('out-routing-micr'),
+                accountMicr: document.getElementById('out-account-micr'), checknumMicr: document.getElementById('out-checknum-micr'),
+                checknumTop: document.getElementById('out-checknum-top'), bankName: document.getElementById('out-bank-name')
+            };
+            
+            function updatePreview() {
+                outputs.name.innerText = inputs.name.value || "";
+                outputs.address.innerText = inputs.address.value || "";
+                outputs.city.innerText = inputs.city.value || "";
+                outputs.state.innerText = inputs.state.value || "";
+                outputs.zip.innerText = inputs.zip.value || "";
+                outputs.payee.innerText = inputs.payee.value || "";
+                let amt = parseFloat(inputs.amount.value) || 0;
+                outputs.amount.innerText = amt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                outputs.amountText.innerText = inputs.amount.value ? numToWords(amt) : "ZERO DOLLARS AND 00/100";
+                outputs.date.innerText = inputs.date.value ? new Date(inputs.date.value).toLocaleDateString('en-US') : "--/--/----";
+                outputs.memo.innerText = inputs.memo.value || "";
+                outputs.routingMicr.innerText = (inputs.routing.value || "000000000").slice(0,9);
+                outputs.accountMicr.innerText = inputs.account.value || "0000000000";
+                outputs.checknumMicr.innerText = inputs.checknum.value || "1001";
+                outputs.checknumTop.innerText = inputs.checknum.value || "1001";
+                
+                // Update back side with all info
+                document.getElementById('back-remitter').innerText = inputs.name.value || "";
+                document.getElementById('back-payee').innerText = inputs.payee.value || "";
+                document.getElementById('back-amount').innerText = `$${amt.toLocaleString()}`;
+                document.getElementById('back-checknum').innerText = inputs.checknum.value || "";
+                document.getElementById('back-routing').innerText = inputs.routing.value || "";
+                document.getElementById('back-account').innerText = inputs.account.value || "";
+                document.getElementById('back-wage-date').innerText = outputs.date.innerText;
+                
+                updateSignatureDisplay();
+            }
+            
+            Object.values(inputs).forEach(i => { if(i) i.addEventListener('input', updatePreview); });
+            
+            document.getElementById('tab-front').onclick = () => {
+                document.getElementById('check-front').classList.remove('hidden');
+                document.getElementById('check-back').classList.add('hidden');
+            };
+            document.getElementById('tab-back').onclick = () => {
+                document.getElementById('check-back').classList.remove('hidden');
+                document.getElementById('check-front').classList.add('hidden');
+                updatePreview();
+            };
+            
+            document.getElementById('btn-fill-demo').onclick = () => {
+                inputs.name.value = "CATHERINE YOUNG";
+                inputs.address.value = "19990 E 14 MILE RD APT D5";
+                inputs.city.value = "FRASER";
+                inputs.state.value = "MI";
+                inputs.zip.value = "48026";
+                inputs.payee.value = "JOHN SMITH";
+                inputs.amount.value = "4750";
+                inputs.memo.value = "Consulting Services";
+                inputs.routing.value = "122000661";
+                inputs.account.value = "1234567890";
+                inputs.checknum.value = "1001";
+                typedInput.value = "Catherine Young";
+                currentSignature = "Catherine Young";
+                signaturePad.clear();
+                updateSignatureDisplay();
+                updatePreview();
+            };
+            
+            document.getElementById('btn-download-pdf').addEventListener('click', async () => {
+                const loader = document.getElementById('pdf-loading');
+                loader.classList.remove('hidden'); loader.classList.add('flex');
+                try {
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF({ orientation: 'portrait', unit: 'in', format: 'letter', compress: true });
+                    const front = document.getElementById('check-front'), back = document.getElementById('check-back');
+                    
+                    front.classList.remove('hidden'); back.classList.add('hidden');
+                    await new Promise(r => setTimeout(r, 150));
+                    const frontCanvas = await html2canvas(front, { scale: 5, backgroundColor: '#fef9ef', useCORS: true });
+                    const cw = 8.25, ch = 3.6, mx = (8.5 - cw) / 2;
+                    pdf.addImage(frontCanvas.toDataURL('image/jpeg', 1.0), 'JPEG', mx, 0.35, cw, ch);
+                    
+                    front.classList.add('hidden'); back.classList.remove('hidden');
+                    await new Promise(r => setTimeout(r, 150));
+                    const backCanvas = await html2canvas(back, { scale: 5, backgroundColor: '#faf5ea' });
+                    pdf.addImage(backCanvas.toDataURL('image/jpeg', 1.0), 'JPEG', mx, 4.15, cw, ch);
+                    
+                    pdf.save(`Check_${inputs.checknum.value || '0000'}.pdf`);
+                    front.classList.remove('hidden'); back.classList.add('hidden');
+                } catch(e) { alert("Error: " + e.message); }
+                finally { loader.classList.add('hidden'); loader.classList.remove('flex'); }
+            });
+            
+            const renderRecentList = () => {
+                const list = document.getElementById('recent-list'), empty = document.getElementById('empty-recent');
+                if(!recentChecks.length){ empty.style.display='block'; list.innerHTML=''; list.appendChild(empty); return; }
+                empty.style.display='none'; list.innerHTML='';
+                recentChecks.forEach(chk => {
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between items-center p-2 bg-amber-50/60 rounded-lg cursor-pointer hover:shadow';
+                    div.innerHTML = `<div class="text-sm font-bold">${chk.payee || 'Payee'}</div><div class="text-xs">#${chk.checknum} • $${parseFloat(chk.amount||0).toLocaleString()}</div>`;
+                    div.onclick = () => loadCheck(chk);
+                    list.appendChild(div);
+                });
+            };
+            
+            const saveCheck = () => {
+                const state = {
+                    payee: inputs.payee.value, amount: inputs.amount.value, checknum: inputs.checknum.value,
+                    name: inputs.name.value, routing: inputs.routing.value, account: inputs.account.value,
+                    memo: inputs.memo.value, date: inputs.date.value, address: inputs.address.value,
+                    city: inputs.city.value, state: inputs.state.value, zip: inputs.zip.value,
+                    template: currentTemplate, typedSignature: currentSignature,
+                    frontFont: currentFrontFont, bankDisplay: document.getElementById('out-bank-name').innerText,
+                    timestamp: Date.now()
+                };
+                if(currentUser && db) addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'checks'), state).catch(console.warn);
+                else { recentChecks.unshift(state); renderRecentList(); }
+                updatePreview();
+            };
+            
+            const loadCheck = (s) => {
+                Object.keys(inputs).forEach(k => { if(inputs[k] && s[k] !== undefined) inputs[k].value = s[k]; });
+                if(s.template) { currentTemplate = s.template; applyTemplate(s.template); }
+                if(s.bankDisplay) document.getElementById('back-bank-name').innerText = s.bankDisplay;
+                if(s.typedSignature) { currentSignature = s.typedSignature; typedInput.value = s.typedSignature; }
+                if(s.frontFont) {
+                    currentFrontFont = s.frontFont;
+                    const fontFamily = fontMap[currentFrontFont];
+                    document.getElementById('out-payee').style.fontFamily = fontFamily;
+                    document.getElementById('out-amount-text').style.fontFamily = fontFamily;
+                    document.getElementById('out-memo').style.fontFamily = fontFamily;
+                }
+                signaturePad.clear();
+                updateSignatureDisplay();
+                updatePreview();
+                document.getElementById('tab-front').click();
+            };
+            
+            document.getElementById('btn-save-recent')?.addEventListener('click', saveCheck);
+            updateSignatureDisplay();
+            updatePreview();
+            setTimeout(resizeCanvas, 100);
+        });
+    </script>
+</body>
+</html>
